@@ -1,0 +1,8 @@
+/* src/app.css */
+@import "tailwindcss/theme";
+@import "tailwindcss/utilities";
+
+@plugin "tailwindcss-scoped-preflight" {
+    isolation-strategy: inside;
+    selector: .tw-root;
+}
