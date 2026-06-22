@@ -59,21 +59,36 @@ class ConfigPayload(BaseModel):
     mode: str
 
 
+class CommandPayload(BaseModel):
+    address: str
+    command: str
+
+
 # Helper functions
 def convertUnits(units: str):
     normal_units = {
-        "mL": "MM",
+        "mL": "ML",
         "microL": "UL",
     }
 
-    timed_units = {"mL/hr": "MH", "ml/min": "MM", "microL/hr": "UH", "microL/min": "UM"}
+    timed_units = {"mL/hr": "MH", "mL/min": "MM", "microL/hr": "UH", "microL/min": "UM"}
 
     if units in normal_units:
         return normal_units[units]
     elif units in timed_units:
-        return timed_units
+        return timed_units[units]
     else:
         return "BAD"
+
+
+def clean_response(response: str) -> str:
+    return response.strip("\x02\x03")
+
+
+def response_errored(response: str) -> bool:
+    if "?OOR" in response:
+        return True
+    return False
 
 
 # Our commands
@@ -111,6 +126,7 @@ async def run_pump(body: TargetPayload) -> str:
 
     try:
         response = pump.query("RUN")
+        response = response.strip("\x02\x03")
         return f"Run command executed. Response: {response}"
     except Exception as e:
         return f"Error executing run command: {str(e)}"
@@ -129,6 +145,7 @@ async def stop_pump(body: TargetPayload) -> str:
 
     # CORRECTED: Updated reference to 'pump' instead of old 'active_pump'
     response = pump.query("STP")
+    response = response.strip("\x02\x03")
     return f"Pump stopped. Response: {response}"
 
 
@@ -147,11 +164,20 @@ async def set_rate(body: RatePayload) -> str:
     units = convertUnits(body.units)
 
     if units == "BAD":
-        return "Rate set failed"
+        return "Rate set failed - Bad Units"
+
+    if body.rate == pump.rate and body.units == pump.rate_unit:
+        return "Already set"
 
     # CORRECTED: Updated reference to 'pump' instead of old 'active_pump'
     command = f"RAT {body.rate} {units}"
     response = pump.query(command)
+
+    if not response_errored(response):
+        pump.rate = body.rate
+        pump.rate_unit = body.units
+
+    response = response.strip("\x02\x03")
     return f"Rate set. Response: {response}"
 
 
@@ -172,14 +198,24 @@ async def set_volume(body: VolumePayload) -> str:
     if units == "BAD":
         return "Rate set failed"
 
+    if body.volume == pump.volume and body.units == pump.volume_unit:
+        return "Already set"
+
     # Set the volume units
-    command = f"VOL {body.units}"
+    command = f"VOL {units}"
     response1 = pump.query(command)
 
     # Set the volume amount
     command = f"VOL {body.volume}"
     response2 = pump.query(command)
-    return f"Volume set. Response: {response1} {response2}"
+
+    if not response_errored(response1) and not response_errored(response2):
+        pump.volume = body.volume
+        pump.volume_unit = body.units
+
+    response1 = response1.strip("\x02\x03")
+    response2 = response2.strip("\x02\x03")
+    return f"Volume set. Response 1: {response1} ---- Response 2: {response2}"
 
 
 @commands.command()
@@ -198,8 +234,16 @@ async def set_mode(body: ModePayload) -> str:
     if body.mode not in modes:
         return "Mode invalid"
 
-    command = f"MODE {modes[body.mode]}"
+    if body.mode == pump.mode:
+        return "Already set"
+
+    command = f"DIR {modes[body.mode]}"
     response = pump.query(command)
+
+    if not response_errored(response):
+        pump.mode = body.mode
+
+    response = response.strip("\x02\x03")
     return f"Mode set. Response: {response}"
 
 
@@ -214,9 +258,30 @@ async def set_diameter(body: DiameterPayload) -> str:
     if not pump:
         return f"Error: Pump {body.address} is not connected."
 
-    command = f"MODE {body.diameter}"
+    command = f"DIA {body.diameter}"
     response = pump.query(command)
-    return f"Mode set. Response: {response}"
+
+    if not response_errored(response):
+        pump.diameter = body.diameter
+
+    response = response.strip("\x02\x03")
+    return f"Diameter set. Response: {response}"
+
+
+@commands.command()
+async def execute_command(body: CommandPayload) -> str:
+    """
+    Executes a command on the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    response = pump.query(body.command)
+    response = response.strip("\x02\x03")
+    return f"Command executed. Response: {response}"
 
 
 # The main function to run the Tauri app

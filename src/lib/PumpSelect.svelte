@@ -1,5 +1,5 @@
 <script>
-    import PumpSelectTab from "./ PumpSelectTab.svelte";
+    import PumpSelectTab from "./PumpSelectTab.svelte";
 
     let { currentAddress = $bindable(), addresses, selectAddress } = $props();
 </script>

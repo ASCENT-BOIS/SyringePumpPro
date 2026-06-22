@@ -72,7 +72,6 @@ declare module '$env/static/private' {
 	export const ZED_ENVIRONMENT: string;
 	export const PATH: string;
 	export const npm_package_json: string;
-	export const LaunchInstanceID: string;
 	export const _: string;
 	export const npm_config_init_module: string;
 	export const npm_config_userconfig: string;
@@ -106,7 +105,6 @@ declare module '$env/static/private' {
 	export const HOMEBREW_CELLAR: string;
 	export const INFOPATH: string;
 	export const OSLogRateLimit: string;
-	export const SECURITYSESSIONID: string;
 	export const VIRTUAL_ENV_PROMPT: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
@@ -232,7 +230,6 @@ declare module '$env/dynamic/private' {
 		ZED_ENVIRONMENT: string;
 		PATH: string;
 		npm_package_json: string;
-		LaunchInstanceID: string;
 		_: string;
 		npm_config_init_module: string;
 		npm_config_userconfig: string;
@@ -266,7 +263,6 @@ declare module '$env/dynamic/private' {
 		HOMEBREW_CELLAR: string;
 		INFOPATH: string;
 		OSLogRateLimit: string;
-		SECURITYSESSIONID: string;
 		VIRTUAL_ENV_PROMPT: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;

@@ -5,12 +5,21 @@
     import { pyInvoke } from "tauri-plugin-pytauri-api";
     import LoadingScreen from "./LoadingScreen.svelte";
     import PumpSettings from "./PumpSettings.svelte";
+    import Popup from "./Popup.svelte";
+    import CommandInput from "./CommandInput.svelte";
 
     let {
         address = $bindable(),
         connected = $bindable(),
         message = $bindable(),
+        config = $bindable(),
+        setConfig,
+        runAll,
+        stopAll,
     } = $props();
+
+    let currentVolume = $state(0);
+    let commandsOpen = $state(false);
 
     async function run() {
         try {
@@ -28,16 +37,6 @@
         } catch (e) {
             console.error(e);
         }
-    }
-
-    let currentVolume = $state(0);
-
-    function fill() {
-        currentVolume += 2;
-    }
-
-    function empty() {
-        currentVolume -= 2;
     }
 </script>
 
@@ -64,9 +63,9 @@
 
                     <h3 class="text-sm mb-1 text-gray-400">All Pumps</h3>
                     <div class="flex flex-row m-2 gap-2 justify-center">
-                        <AsyncButton title="Run" asynconclick={run}
+                        <AsyncButton title="Run" asynconclick={runAll}
                         ></AsyncButton>
-                        <AsyncButton title="Stop/Pause" asynconclick={stop}
+                        <AsyncButton title="Stop/Pause" asynconclick={stopAll}
                         ></AsyncButton>
                     </div>
                 </div>
@@ -75,22 +74,38 @@
                     <h2 class="text-xl font-bold mb-1">Status</h2>
                     <p class="text-gray-500">Connected: {connected}</p>
                     <p class="text-gray-500">State: Paused</p>
-                    <p class="text-gray-500">Volume: {currentVolume}</p>
-                    <p class="text-gray-500">Rate: 19.0 ml/min</p>
+                    <p class="text-gray-500">
+                        Volume: {config.volume}
+                        {config.volumeUnit}
+                    </p>
+                    <p class="text-gray-500">
+                        Rate: {config.rate}
+                        {config.rateUnit}
+                    </p>
                     <p class="text-gray-500">Volume Dispensed: {connected}</p>
                 </div>
+
+                <Button
+                    title="Enter Commands"
+                    onclick={() => (commandsOpen = true)}
+                />
             </div>
 
             <div class="flex flex-row items-center justify-center gap-12">
-                <!-- <div class="h-full aspect-100/480 shrink-0 py-2">
-                    <Syringe bind:volume={currentVolume} maxVolume={100} />
-                </div> -->
-
                 <div class="w-full max-h-full">
-                    <PumpSettings />
+                    <PumpSettings bind:config {setConfig} />
                 </div>
             </div>
         </div>
+
+        <!-- The Popup to enter commands to the machine -->
+        <Popup
+            open={commandsOpen}
+            title="Enter Command"
+            onClose={() => (commandsOpen = false)}
+        >
+            <CommandInput {address} />
+        </Popup>
     </div>
 {:else}
     <LoadingScreen {address} bind:message></LoadingScreen>

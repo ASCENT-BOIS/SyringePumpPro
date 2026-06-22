@@ -33,16 +33,18 @@ class NewEraPump:
 
         # Pump information. Stored here so duplicates aren't sent
         self.addr = address
-        self.rate = 0
+        self.rate: float = 0.0
 
         # microL/min microL/hr
         # mL/min mL/hr
-        self.rate_unit = "mL/min"
-        self.volume = 0
-        self.volume_unit = "mL"  # microL/mL
-        self.diameter = 20.0
+        self.rate_unit = "mL/mi"
+        self.volume: float = 200.0
+        self.volume_unit = "m"  # microL/mL
+        self.diameter: float = 200.0
         self.diamter_unit = "mm"  # Always mm
-        self.mode = "inflow"  # inflow/withdraw
+        self.mode = "inflo"  # inflow/withdraw
+
+        self.state = "Paused"
 
         self.ser: serial.Serial = serial.Serial()
 

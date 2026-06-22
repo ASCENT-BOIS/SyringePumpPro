@@ -15,6 +15,6 @@
         justify-content: center;
         height: 100vh;
         width: 100vw;
-        background-color: slategray;
+        background-color: lightgrey;
     }
 </style>

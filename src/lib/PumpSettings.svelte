@@ -1,17 +1,39 @@
 <script lang="ts">
     import UnitSelect from "./UnitSelect.svelte";
     import ModeToggle from "./ModeToggle.svelte";
+    import { onMount } from "svelte";
 
-    let {
-        volume = $bindable(0),
-        volumeUnit = $bindable("mL"),
-        rate = $bindable(0),
-        rateUnit = $bindable("mL/min"),
-        diameter = $bindable(20.0),
-        diameterUnit = $bindable("mm"),
-        mode = $bindable<"inflow" | "withdraw">("inflow"),
-        onSet = () => {},
-    } = $props();
+    let { config = $bindable(), setConfig } = $props();
+
+    let volume = $state(0);
+    let volumeUnit = $state("mL");
+    let rate = $state(0);
+    let rateUnit = $state("mL/min");
+    let diameter = $state(20.0);
+    let diameterUnit = $state("mm");
+    let mode = $state<"inflow" | "withdraw">("inflow");
+
+    $effect(() => {
+        volume = config.volume;
+        volumeUnit = config.volumeUnit;
+        rate = config.rate;
+        rateUnit = config.rateUnit;
+        diameter = config.diameter;
+        mode = config.mode;
+    });
+
+    async function onSet() {
+        config = {
+            address: config.address,
+            volume,
+            volumeUnit,
+            rate,
+            rateUnit,
+            diameter,
+            mode,
+        };
+        await setConfig(config.address, config);
+    }
 
     const inputClass =
         "w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
@@ -43,7 +65,7 @@
             bind: () => diameter,
             set: (v) => (diameter = v),
             step: 0.01,
-            units: ["mm", "cm"],
+            units: ["mm"],
             unitBind: () => diameterUnit,
             unitSet: (u) => (diameterUnit = u),
         },
