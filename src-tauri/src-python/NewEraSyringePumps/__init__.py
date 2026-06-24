@@ -91,6 +91,16 @@ def response_errored(response: str) -> bool:
     return False
 
 
+reverse_units = {
+    "ML": "mL",
+    "UL": "microL",
+    "MH": "mL/hr",
+    "MM": "mL/min",
+    "UH": "microL/hr",
+    "UM": "microL/min",
+}
+
+
 # Our commands
 @commands.command()
 async def connect_pump(body: ConnectPayload) -> str:
@@ -104,12 +114,51 @@ async def connect_pump(body: ConnectPayload) -> str:
         active_pumps[body.address].disconnect()
 
     active_pumps[body.address] = NewEraPump(body.address)
-    active_pumps[body.address].open()
+    pump = active_pumps[body.address]
+    pump.open()
 
-    # Send a blank query (carriage return only) to fetch the pump's basic status/prompt
-    status_response = active_pumps[body.address].query("")
+    # Query the pump for its current settings via serial
+    def clean(raw: str) -> str:
+        return raw.strip("\x02\x03").rstrip("><:T")
 
-    return f"Successfully connected to pump '{body.address}'. Status: {status_response}"
+    reverse_modes = {"INF": "inflow", "WDR": "withdraw"}
+
+    # Rate
+    raw = pump.query("RAT")
+    c = clean(raw)
+    if c and len(c) > 3 and "?OOR" not in c:
+        inner = c[3:]
+        pump.rate = float(inner[:-2])
+        pump.rate_unit = reverse_units.get(inner[-2:], inner[-2:])
+
+    # Diameter
+    raw = pump.query("DIA")
+    c = clean(raw)
+    if c and len(c) > 3 and "?OOR" not in c:
+        inner = c[3:]
+        pump.diameter = float(inner)
+
+    # Volume
+    raw = pump.query("VOL")
+    c = clean(raw)
+    if c and len(c) > 3 and "?OOR" not in c:
+        inner = c[3:]
+        pump.volume = float(inner[:-2])
+        pump.volume_unit = reverse_units.get(inner[-2:], inner[-2:])
+
+    # Direction / mode
+    raw = pump.query("DIR")
+    c = clean(raw)
+    if c and len(c) > 3 and "?OOR" not in c:
+        inner = c[3:]
+        pump.mode = reverse_modes.get(inner, inner)
+
+    # Send a blank query to fetch the pump's basic status/prompt
+    status_response = pump.query("")
+
+    response = status_response.strip("\x02\x03")
+
+    return f"{response[2]}"
 
 
 @commands.command()
@@ -127,7 +176,7 @@ async def run_pump(body: TargetPayload) -> str:
     try:
         response = pump.query("RUN")
         response = response.strip("\x02\x03")
-        return f"Run command executed. Response: {response}"
+        return f"{response[2]}"
     except Exception as e:
         return f"Error executing run command: {str(e)}"
 
@@ -146,7 +195,7 @@ async def stop_pump(body: TargetPayload) -> str:
     # CORRECTED: Updated reference to 'pump' instead of old 'active_pump'
     response = pump.query("STP")
     response = response.strip("\x02\x03")
-    return f"Pump stopped. Response: {response}"
+    return f"{response[2]}"
 
 
 @commands.command()
@@ -258,6 +307,9 @@ async def set_diameter(body: DiameterPayload) -> str:
     if not pump:
         return f"Error: Pump {body.address} is not connected."
 
+    if body.diameter == pump.diameter:
+        return "Already set"
+
     command = f"DIA {body.diameter}"
     response = pump.query(command)
 
@@ -282,6 +334,111 @@ async def execute_command(body: CommandPayload) -> str:
     response = pump.query(body.command)
     response = response.strip("\x02\x03")
     return f"Command executed. Response: {response}"
+
+
+@commands.command()
+async def get_rate(body: ConnectPayload) -> str:
+    """
+    Returns the current rate of the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    return f"{pump.rate} {pump.rate_unit}"
+
+
+@commands.command()
+async def get_volume(body: ConnectPayload) -> str:
+    """
+    Returns the current volume of the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    return f"{pump.volume} {pump.volume_unit}"
+
+
+@commands.command()
+async def get_diameter(body: ConnectPayload) -> str:
+    """
+    Returns the current diameter of the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    return f"{pump.diameter}"
+
+
+@commands.command()
+async def get_direction(body: ConnectPayload) -> str:
+    """
+    Returns the current direction of the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    return f"{pump.mode}"
+
+
+@commands.command()
+async def get_status(body: TargetPayload) -> str:
+    """
+    Returns the current status of the pump.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    # Get and clean the response
+    response = pump.query("")
+    response = response.strip("\x02\x03")
+    response = response[2:]
+    return f"{response}"
+
+
+@commands.command()
+async def get_dispensed(body: TargetPayload) -> str:
+    """
+    Returns the current status of the pump and the amount of dispensed liquid.
+    """
+    global active_pumps
+
+    pump = active_pumps.get(body.address)
+    if not pump:
+        return f"Error: Pump {body.address} is not connected."
+
+    # Get and clean the response
+    response = pump.query("DIS")
+    response = response.strip("\x02\x03")
+
+    # Example response: 00SI16.09W0.000ML
+    # Get everything after the address prefix
+    response = response[2:]
+
+    status = response[0]
+    units = response[-2:]
+    amount = response[1:-2]
+    amounts = amount.split("W")
+    amounts[0] = amounts[0][1:]
+
+    # Amounts[0] is inflow
+    # Amounts[1] is withdraw
+    units = reverse_units.get(units, units)
+    return f"{status} {amounts[0]} {amounts[1]} {units}"
 
 
 # The main function to run the Tauri app

@@ -29,7 +29,7 @@ class NewEraPump:
         self.bytesize = 8
         self.parity = "N"
         self.stopbits = 1
-        self.timeout = 3
+        self.timeout = 0.2
 
         # Pump information. Stored here so duplicates aren't sent
         self.addr = address
@@ -86,15 +86,9 @@ class NewEraPump:
         Returns:
             The response from the pump as a string, with the terminator stripped
         """
-        response = b""
-        while True:
-            chunk = self.ser.read(1)
-            if not chunk:
-                break  # timeout
-            response += chunk
-            if response[-1:] in (b">", b"<", b":", b"T"):
-                break
-        return response.decode()
+        response = self.ser.read_until(b"\x03")
+
+        return response.decode(errors="ignore")
 
     def query(self, command: str) -> str:
         """

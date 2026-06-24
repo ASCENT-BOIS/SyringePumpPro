@@ -1,12 +1,15 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { pyInvoke } from "tauri-plugin-pytauri-api";
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
 
     import type { PumpConfig } from "$lib/types";
     import { defaultConfig } from "$lib/types";
     import PumpController from "$lib/PumpController.svelte";
     import SelectPump from "$lib/PumpSelect.svelte";
+
+    let isPolling = false;
+    let pollTimer: ReturnType<typeof setTimeout>;
 
     let currentAddress = $state("00");
     let addresses = $state<string[]>(["00", "01"]);
@@ -27,15 +30,80 @@
         currentAddress = address;
     }
 
+    async function pollPumps() {
+        if (!isPolling) return; // Allows us to stop the loop cleanly
+
+        for (let address of addresses) {
+            if (!connected[address]) continue;
+
+            try {
+                const response = await pyInvoke("get_dispensed", {
+                    address: address,
+                });
+                console.log(response);
+
+                const parts = String(response).split(" ");
+                const statusChar = parts[0];
+                configs[address].status =
+                    statusChar === "I" || statusChar === "W" ? "R"
+                    : statusChar === "P" ? "P"
+                    : "S";
+
+                configs[address].inflow = parseFloat(parts[1]) || 0;
+                configs[address].withdraw = parseFloat(parts[2]) || 0;
+                configs[address].dispenseUnit = parts[3] || "mL";
+            } catch (e) {
+                console.error(`Error polling pump ${address}:`, e);
+            }
+        }
+
+        if (isPolling) {
+            pollTimer = setTimeout(pollPumps, 1000);
+        }
+    }
+
     async function connect(address: string) {
         const result = await pyInvoke("connect_pump", { address: address });
         console.log(result);
 
-        const config_result = await setConfig(address, configs[address]);
-        console.log(config_result);
+        connected = { ...connected, [address]: true };
+        configs[address].status = result == "I" || result == "W" ? "R" : "S";
+        await readConfig(address);
+    }
+
+    async function readConfig(address: string) {
+        // Read current pump settings and update the UI config
+        const [rateStr, volumeStr, diameterStr, modeStr] = await Promise.all([
+            pyInvoke("get_rate", { address }),
+            pyInvoke("get_volume", { address }),
+            pyInvoke("get_diameter", { address }),
+            pyInvoke("get_direction", { address }),
+        ]);
+
+        const rateParts = String(rateStr).split(" ");
+        const volumeParts = String(volumeStr).split(" ");
+
+        configs = {
+            ...configs,
+            [address]: {
+                ...configs[address],
+                rate: parseFloat(rateParts[0]) || configs[address].rate,
+                rateUnit:
+                    rateParts.slice(1).join(" ") || configs[address].rateUnit,
+                volume: parseFloat(volumeParts[0]) || configs[address].volume,
+                volumeUnit:
+                    volumeParts.slice(1).join(" ") ||
+                    configs[address].volumeUnit,
+                diameter:
+                    parseFloat(String(diameterStr)) ||
+                    configs[address].diameter,
+                mode: String(modeStr) === "withdraw" ? "withdraw" : "inflow",
+            },
+        };
     }
 
     async function setConfig(address: string, config: PumpConfig) {
+        console.log("Setting Config: ", config);
         // Set rate
         const rate_result = await pyInvoke("set_rate", {
             address: address,
@@ -72,6 +140,8 @@
         for (let address of addresses) {
             try {
                 const result = await pyInvoke("run_pump", { address: address });
+                configs[address].status =
+                    result === "I" || result === "W" ? "R" : result;
                 console.log(result);
             } catch (e) {
                 console.error(e);
@@ -86,6 +156,7 @@
                 const result = await pyInvoke("stop_pump", {
                     address: address,
                 });
+                configs[address].status = result == "S" ? "S" : "P";
                 console.log(result);
             } catch (e) {
                 console.error(e);
@@ -94,13 +165,11 @@
     }
 
     onMount(async () => {
-        // Phase 1: Connect all pumps
         await Promise.all(
             addresses.map(async (address) => {
                 for (let i = 0; i < 20; i++) {
                     try {
-                        await pyInvoke("connect_pump", { address });
-                        connected = { ...connected, [address]: true };
+                        await connect(address);
                         break;
                     } catch (err) {
                         console.error(
@@ -117,21 +186,15 @@
         const failedConnect = addresses.filter((a) => !connected[a]);
         if (failedConnect.length > 0) {
             message = `Failed to connect to pump(s): ${failedConnect.join(", ")} after 20 attempts.`;
-            return;
         }
 
-        // Phase 2: Apply config to all connected pumps
-        await Promise.all(
-            addresses.map(async (address) => {
-                try {
-                    let response = await setConfig(address, configs[address]);
-                    console.log("SETUP: ", response);
-                } catch (err) {
-                    console.error(`Config failed for ${address}:`, err);
-                    message = `Failed to apply config to pump(s): ${address}.`;
-                }
-            }),
-        );
+        isPolling = true;
+        pollPumps();
+    });
+
+    onDestroy(() => {
+        isPolling = false;
+        if (pollTimer) clearTimeout(pollTimer);
     });
 </script>
 

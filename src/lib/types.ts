@@ -7,6 +7,10 @@ export interface PumpConfig {
   diameter: number;
   diameterUnit: string;
   mode: "inflow" | "withdraw";
+  status: "P" | "R" | "S";
+  inflow: number;
+  withdraw: number;
+  dispenseUnit: string;
 }
 
 export const defaultConfig: Omit<PumpConfig, "address"> = {
@@ -17,4 +21,8 @@ export const defaultConfig: Omit<PumpConfig, "address"> = {
   diameter: 20.0,
   diameterUnit: "mm",
   mode: "inflow",
+  status: "P",
+  inflow: 0,
+  withdraw: 0,
+  dispenseUnit: "mL",
 };

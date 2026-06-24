@@ -1,7 +1,6 @@
 <script lang="ts">
     import UnitSelect from "./UnitSelect.svelte";
     import ModeToggle from "./ModeToggle.svelte";
-    import { onMount } from "svelte";
 
     let { config = $bindable(), setConfig } = $props();
 
@@ -23,7 +22,7 @@
     });
 
     async function onSet() {
-        config = {
+        let tempConfig = {
             address: config.address,
             volume,
             volumeUnit,
@@ -32,7 +31,16 @@
             diameter,
             mode,
         };
-        await setConfig(config.address, config);
+        await setConfig(config.address, tempConfig);
+        config = config = {
+            ...config,
+            volume,
+            volumeUnit,
+            rate,
+            rateUnit,
+            diameter,
+            mode,
+        };
     }
 
     const inputClass =
@@ -94,11 +102,7 @@
                     step={field.step}
                     class={inputClass}
                 />
-                <UnitSelect
-                    value={field.unitBind()}
-                    options={field.units}
-                    onchange={(u) => field.unitSet(u)}
-                />
+                <UnitSelect value={field.unitBind()} options={field.units} />
             </div>
         </div>
     {/each}

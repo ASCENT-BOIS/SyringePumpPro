@@ -29,7 +29,7 @@
                     {title}
                 </h2>
                 <button
-                    class="rounded-full p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    class="rounded-full py-1 px-4 text-zinc-500 hover:bg-red-100 dark:hover:bg-zinc-800"
                     onclick={onClose}
                     aria-label="Close"
                 >
