@@ -1,0 +1,11 @@
+# Don't fail the install when a dependency's build script isn't approved;
+# print a warning instead (pnpm v11 defaults this to true = hard error).
+strictDepBuilds: false
+
+# pnpm v11+: explicitly approve dependency build scripts that are actually needed.
+allowBuilds:
+  esbuild: true
+
+# pnpm v10 backwards-compat (silently ignored by v11).
+onlyBuiltDependencies:
+  - esbuild
