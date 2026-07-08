@@ -70,7 +70,6 @@ jobs:
         with:
           # Or: `node-version-file: package.json`
           node-version: lts/*
-          cache: "pnpm"
 
       - name: Install project dependencies
         run: |
