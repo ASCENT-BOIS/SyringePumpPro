@@ -20,6 +20,10 @@
         "01": false,
     });
 
+    type SerialPort = { device: string; description: string };
+    let ports = $state<SerialPort[]>([]);
+    let selectedPort = $state("");
+
     let configs = $state<Record<string, PumpConfig>>(
         Object.fromEntries(
             addresses.map((a) => [a, { address: a, ...defaultConfig }]),
@@ -28,6 +32,59 @@
 
     function selectAddress(address: string) {
         currentAddress = address;
+    }
+
+    async function loadPorts() {
+        try {
+            const res = await pyInvoke("list_serial_ports", {});
+            ports = JSON.parse(String(res)) as SerialPort[];
+            // Default to the first available port if none is selected yet, or
+            // if the previously selected port has disappeared.
+            if (
+                ports.length > 0 &&
+                !ports.some((p) => p.device === selectedPort)
+            ) {
+                selectedPort = ports[0].device;
+            }
+        } catch (e) {
+            console.error("Failed to list serial ports:", e);
+        }
+    }
+
+    async function reconnectAll() {
+        if (!selectedPort) {
+            message = "No serial port selected. Plug in a pump and refresh.";
+            return;
+        }
+
+        message = "";
+        connected = Object.fromEntries(addresses.map((a) => [a, false]));
+
+        for (const address of addresses) {
+            for (let i = 0; i < 20; i++) {
+                try {
+                    await connect(address);
+                    break;
+                } catch (err) {
+                    console.error(
+                        `Connection failed for ${address} on attempt ${i}`,
+                        err,
+                    );
+                    if (i < 19) await new Promise((r) => setTimeout(r, 500));
+                }
+            }
+        }
+
+        const failedConnect = addresses.filter((a) => !connected[a]);
+        message =
+            failedConnect.length > 0
+                ? `Failed to connect to pump(s): ${failedConnect.join(", ")} after 20 attempts.`
+                : "";
+
+        if (!isPolling) {
+            isPolling = true;
+            pollPumps();
+        }
     }
 
     async function pollPumps() {
@@ -63,7 +120,10 @@
     }
 
     async function connect(address: string) {
-        const result = await pyInvoke("connect_pump", { address: address });
+        const result = await pyInvoke("connect_pump", {
+            address: address,
+            port: selectedPort,
+        });
         console.log(result);
 
         connected = { ...connected, [address]: true };
@@ -165,31 +225,15 @@
     }
 
     onMount(async () => {
-        await Promise.all(
-            addresses.map(async (address) => {
-                for (let i = 0; i < 20; i++) {
-                    try {
-                        await connect(address);
-                        break;
-                    } catch (err) {
-                        console.error(
-                            `Connection failed for ${address} on attempt ${i}`,
-                            err,
-                        );
-                        if (i < 19)
-                            await new Promise((r) => setTimeout(r, 500));
-                    }
-                }
-            }),
-        );
+        await loadPorts();
 
-        const failedConnect = addresses.filter((a) => !connected[a]);
-        if (failedConnect.length > 0) {
-            message = `Failed to connect to pump(s): ${failedConnect.join(", ")} after 20 attempts.`;
+        if (!selectedPort) {
+            message =
+                "No serial ports found. Plug in a pump, then click Refresh.";
+            return;
         }
 
-        isPolling = true;
-        pollPumps();
+        await reconnectAll();
     });
 
     onDestroy(() => {
@@ -201,6 +245,37 @@
 <div class="tw-root">
     <div class="flex flex-row w-screen h-screen">
         <div class="flex flex-col w-full h-full p-2">
+            <div
+                class="flex flex-row items-center gap-2 mb-2 p-2 bg-gray-100 rounded-lg"
+            >
+                <span class="text-sm font-medium text-gray-600">Serial port</span>
+                <select
+                    bind:value={selectedPort}
+                    class="flex-1 px-2 py-2 bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
+                >
+                    {#if ports.length === 0}
+                        <option value="" disabled>No ports found</option>
+                    {/if}
+                    {#each ports as port}
+                        <option value={port.device}
+                            >{port.device} — {port.description}</option
+                        >
+                    {/each}
+                </select>
+                <button
+                    onclick={loadPorts}
+                    class="px-3 py-2 bg-white border border-gray-300 text-gray-700 font-medium text-sm rounded-lg shadow-sm hover:bg-gray-50 active:scale-95 transition-all"
+                >
+                    Refresh
+                </button>
+                <button
+                    onclick={reconnectAll}
+                    disabled={!selectedPort}
+                    class="px-3 py-2 bg-indigo-600 text-white font-medium text-sm rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    Connect
+                </button>
+            </div>
             <SelectPump {currentAddress} {addresses} {selectAddress}
             ></SelectPump>
             <PumpController

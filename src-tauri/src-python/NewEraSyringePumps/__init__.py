@@ -1,3 +1,4 @@
+import json
 import sys
 from typing import Dict, Optional
 
@@ -9,7 +10,7 @@ from pytauri import (
     context_factory,
 )
 
-from .NewEraPump import NewEraPump
+from .NewEraPump import NewEraPump, available_ports, close_other_connections
 
 commands: Commands = Commands()
 
@@ -18,8 +19,15 @@ active_pumps: Dict[str, NewEraPump] = {}
 
 
 # --- Pydantic Models ---
+class EmptyPayload(BaseModel):
+    pass
+
+
 class ConnectPayload(BaseModel):
     address: str
+    # Serial port to connect over. Optional so the read-only getter commands
+    # (which reuse this payload) can be called with just an address.
+    port: str = ""
 
 
 class TargetPayload(BaseModel):
@@ -103,17 +111,27 @@ reverse_units = {
 
 # Our commands
 @commands.command()
+async def list_serial_ports(body: EmptyPayload) -> str:
+    """
+    Returns the serial ports available on this machine as a JSON string,
+    e.g. '[{"device": "COM3", "description": "USB Serial Port"}]'.
+    """
+    return json.dumps(available_ports())
+
+
+@commands.command()
 async def connect_pump(body: ConnectPayload) -> str:
     """
-    Connects to the pump using the provided address.
+    Connects to the pump using the provided address and serial port.
     """
     global active_pumps
 
-    # CORRECTED: Use 'in' to check if the key exists before accessing it
-    if body.address in active_pumps:
-        active_pumps[body.address].disconnect()
+    # If the user switched ports, release any previously opened ports.
+    close_other_connections(body.port)
 
-    active_pumps[body.address] = NewEraPump(body.address)
+    # New Era pumps share one serial port across chain addresses, so
+    # (re)connecting an address just reuses the shared, already-open port.
+    active_pumps[body.address] = NewEraPump(body.address, body.port)
     pump = active_pumps[body.address]
     pump.open()
 

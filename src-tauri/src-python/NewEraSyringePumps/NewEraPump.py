@@ -11,8 +11,47 @@ Typical usage:
 """
 
 import time
+from typing import Dict, List
 
 import serial
+from serial.tools import list_ports
+
+# New Era pumps use a multi-drop RS-232 chain: multiple pump addresses
+# share a single physical serial port. Keep one shared connection per
+# port so we don't try to open the same port more than once.
+_connections: Dict[str, "serial.Serial"] = {}
+
+
+def available_ports() -> List[Dict[str, str]]:
+    """
+    Enumerate the serial ports available on this machine.
+
+    Returns a list of ``{"device": ..., "description": ...}`` entries,
+    cross-platform (e.g. ``COM3`` on Windows, ``/dev/cu.*`` on macOS).
+    """
+    ports = []
+    for p in list_ports.comports():
+        ports.append(
+            {
+                "device": p.device,
+                "description": p.description or p.device,
+            }
+        )
+    return ports
+
+
+def close_other_connections(keep_port: str) -> None:
+    """
+    Close every shared serial connection except the one for ``keep_port``.
+
+    Used when the user switches to a different port so we don't leave the
+    previous port locked open.
+    """
+    for port in list(_connections.keys()):
+        if port != keep_port:
+            conn = _connections.pop(port)
+            if conn.is_open:
+                conn.close()
 
 
 class NewEraPump:
@@ -21,10 +60,12 @@ class NewEraPump:
 
     Args:
         address: The pump's chain address, zero-padded to two digits (e.g. "00")
+        port: The serial port device to communicate over (e.g. "COM3" or
+            "/dev/cu.usbserial-1130")
     """
 
-    def __init__(self, address: str):
-        self.port = "/dev/cu.usbserial-1130"
+    def __init__(self, address: str, port: str = ""):
+        self.port = port
         self.baudrate = 19200
         self.bytesize = 8
         self.parity = "N"
@@ -46,21 +87,32 @@ class NewEraPump:
 
         self.state = "Paused"
 
-        self.ser: serial.Serial = serial.Serial()
+        # Reuse the shared connection for this port if one already exists.
+        existing = _connections.get(port)
+        self.ser: serial.Serial = existing if existing is not None else serial.Serial()
 
     def open(self):
         """
-        Open the serial connection to the pump. Return early if already open
+        Open the serial connection to the pump. Reuses a shared connection for
+        the port if one is already open (multi-drop chain).
         """
-        if not self.ser.is_open:
-            self.ser = serial.Serial(
-                self.port,
-                self.baudrate,
-                self.bytesize,
-                self.parity,
-                self.stopbits,
-                self.timeout,
-            )
+        if not self.port:
+            raise ValueError("No serial port selected")
+
+        existing = _connections.get(self.port)
+        if existing is not None and existing.is_open:
+            self.ser = existing
+            return
+
+        self.ser = serial.Serial(
+            self.port,
+            self.baudrate,
+            self.bytesize,
+            self.parity,
+            self.stopbits,
+            self.timeout,
+        )
+        _connections[self.port] = self.ser
 
     def disconnect(self):
         """
@@ -68,6 +120,7 @@ class NewEraPump:
         """
         if self.ser.is_open:
             self.ser.close()
+        _connections.pop(self.port, None)
 
     def write(self, command: str):
         """
