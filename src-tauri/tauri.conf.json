@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.username.NewEraSyringePumps",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "npm run build",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "npm run dev",
     "frontendDist": "../dist",
     "features": ["pytauri/standalone"]
   },
